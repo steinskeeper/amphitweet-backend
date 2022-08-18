@@ -8,6 +8,9 @@ import os.path
 import json
 import asyncio
 from dotenv import load_dotenv
+from PIL import Image, ImageDraw, ImageFont
+from textwrap import wrap
+import fnmatch
 
 from tweetcapture import TweetCapture
 from flask import send_from_directory, make_response
@@ -20,6 +23,8 @@ import requests
 import urllib.request
 from bson.objectid import ObjectId
 import uuid
+
+from tweet import GenTweet
 
 
 from pymongo import MongoClient
@@ -39,7 +44,7 @@ bearer_token = os.getenv("BEARER_TOKEN")
 
 
 def create_url(tweetid):
-    tweet_fields = "tweet.fields=text&expansions=author_id&user.fields=username"
+    tweet_fields = "tweet.fields=text,created_at,public_metrics&expansions=author_id&user.fields=username,profile_image_url"
     # Tweet fields are adjustable.
     # Options include:
     # attachments, author_id, context_annotations,
@@ -132,24 +137,35 @@ def create_user():
     print(request)
     file = request.files['file']
     print(data, file)
+    ext = file.filename
+    print(ext)
+    ext = ext.split(".")[-1]
+    print(ext)
 
-    file.save("profile/"+secure_filename(file.filename))
+    
     m = usercol.find_one({"username": data["username"]})
+    print(m)
     if m:
         id = {
-            "id": str(m.inserted_id)
+            "id": str(m["_id"])
         }
 
         return jsonify(id)
     else:
-
+        o=ObjectId()
+        so=str(o)
         x = usercol.insert_one(
-            {"username": data["username"], "password": data["password"], "profile": (file.filename)})
+            {"_id":o,"username": data["username"], "password": data["password"],"profile":so})
+
         id = {
             "id": str(x.inserted_id)
         }
+        fn=str(x.inserted_id)
+        fnext=fn+"."+ext
+        
+        file.save("profile/"+secure_filename(fnext))
 
-    return jsonify(id)
+        return jsonify(id)
 
 
 @app.route("/getallvids", methods=["GET"])
@@ -199,8 +215,17 @@ def send_video(path):
     return send_from_directory('video', path)
 
 
-@app.route('/profile/<path:path>')
+@app.route('/profile2/<path:path>')
 def send_profile(path):
+    print(path)
+    path =path+"*"
+    d = fnmatch.filter(os.listdir("profile"), path)
+    print(path)
+    return send_from_directory('profile', d[0])
+
+@app.route('/profile/<path:path>')
+def send_profile1(path):
+    
     return send_from_directory('profile', path)
 
 
@@ -233,19 +258,19 @@ def send_audio(path):
         tweet = json_response["data"][0]["text"]
 
         if voice == "female1":
-            wav = synthesizer.tts(tweet, 'p261')
+            wav = synthesizer.tts(tweet, 'p245')
             path1 = 'audio/'+tweetid+'.mp3'
             synthesizer.save_wav(wav, path1)
         elif voice == "female2":
-            wav = synthesizer.tts(tweet, 'p262')
+            wav = synthesizer.tts(tweet, 'p246')
             path1 = 'audio/'+tweetid+'.mp3'
             synthesizer.save_wav(wav, path1)
         elif voice == "male1":
-            wav = synthesizer.tts(tweet, 'p263')
+            wav = synthesizer.tts(tweet, 'p241')
             path1 = 'audio/'+tweetid+'.mp3'
             synthesizer.save_wav(wav, path1)
         elif voice == "male2":
-            wav = synthesizer.tts(tweet, 'p264')
+            wav = synthesizer.tts(tweet, 'p269')
             path1 = 'audio/'+tweetid+'.mp3'
             synthesizer.save_wav(wav, path1)
 
@@ -265,20 +290,35 @@ def send_tweet(path):
         return send_from_directory('tweet', path)
     else:
 
-        tweety = TweetCapture()
+        
 
         tweetid = path.split(".")[0]
         print(tweetid)
         url = create_url(tweetid)
         json_response = connect_to_endpoint(url)
+        tweet = json_response["data"][0]["text"]
+        username = json_response["includes"]["users"][0]["username"]
+        name = json_response["includes"]["users"][0]["name"]
+        twid=json_response["data"][0]["id"]
+        png=json_response["includes"]["users"][0]["profile_image_url"]
+        userid = json_response["includes"]["users"][0]["id"]
+        urllib.request.urlretrieve(png,"profile/"+userid+".jpg" )
+        likes = json_response["data"][0]["public_metrics"]["like_count"]
+        retweet = json_response["data"][0]["public_metrics"]["retweet_count"]
+        reply = json_response["data"][0]["public_metrics"]["reply_count"]
+        created_at = json_response["data"][0]["created_at"]
+        print(json_response)
+        print(created_at)
+        
+        
 
-        picurl = "https://twitter.com/" + \
-            json_response["includes"]["users"][0]["username"] + \
-            "/status/"+tweetid
+        gt = GenTweet(text=tweet, imPath="profile/"+userid+".jpg", name=name, username=username, isVerified=True,userid=twid,likes=likes,retweet=retweet,reply=reply,created_at=created_at)
+        gt.CreateTweet()
 
-        asyncio.run(tweety.screenshot(
-            picurl, "tweet/"+tweetid+".png", mode=2, night_mode=2))
-        return send_from_directory('tweet', path)
+        return send_from_directory('tweet', twid+".png")
+
+
+
 
 
 @app.route('/tts', methods=['POST'])
@@ -337,4 +377,4 @@ def tts1():
     return "success"
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port='5000')
+    app.run(host='0.0.0.0', port='5000',debug=True)
