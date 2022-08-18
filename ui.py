@@ -82,7 +82,7 @@ def connect_to_endpoint(url):
 @app.route("/create_video", methods=["POST"])
 def create_video():
     data = request.get_json()
-    url = "https://cold-cameras-unite-103-5-135-70.loca.lt/out/" + \
+    url = "http://localhost:3000/out/" + \
         data["filename"]
 
     urllib.request.urlretrieve(url, "video/"+data["filename"])
