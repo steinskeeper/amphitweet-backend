@@ -7,6 +7,8 @@ import os
 import os.path
 import json
 import asyncio
+from dotenv import load_dotenv
+
 from tweetcapture import TweetCapture
 from flask import send_from_directory, make_response
 from mutagen.mp3 import MP3
@@ -19,6 +21,7 @@ import urllib.request
 from bson.objectid import ObjectId
 import uuid
 
+
 from pymongo import MongoClient
 client = MongoClient("mongodb://localhost:27017/")
 db = client['amphitweet']
@@ -28,9 +31,11 @@ videocol = db["videos"]
 
 app = Flask(__name__)
 CORS(app)
+load_dotenv()
 
 
-bearer_token = "AAAAAAAAAAAAAAAAAAAAAAQPgAEAAAAAVqe8vlZlTvuk%2BZ2WfCEO3Yon%2BEE%3DhGKtypuseESWR6CvQ1fASHYncKvcMm0S9hUynGnsiTrM1ZyAh8"
+bearer_token = os.getenv("BEARER_TOKEN")
+
 
 
 def create_url(tweetid):
@@ -48,9 +53,8 @@ def create_url(tweetid):
     url = "https://api.twitter.com/2/tweets?{}&{}".format(ids, tweet_fields)
     username = "usernames=yazzzat"
     user_fields = "user.fields=username,id,profile_image_url"
-    url2 = "https://api.twitter.com/2/users/by?{}&{}".format(
-        username, user_fields)
-    return url2
+
+    return url
 
 
 def bearer_oauth(r):
@@ -78,7 +82,7 @@ def connect_to_endpoint(url):
 @app.route("/create_video", methods=["POST"])
 def create_video():
     data = request.get_json()
-    url = "https://thirty-knives-sing-103-5-135-70.loca.lt/out/" + \
+    url = "https://cold-cameras-unite-103-5-135-70.loca.lt/out/" + \
         data["filename"]
 
     urllib.request.urlretrieve(url, "video/"+data["filename"])
@@ -104,8 +108,8 @@ def create_video():
 def upload_video():
     file = request.files['file']
     data = json.loads(request.form.get('data'))
-    print(file,data)
-    
+    print(file, data)
+
     file.filename = str(uuid.uuid4())+".mp4"
     file.save("video/"+file.filename)
     yoid = ObjectId(data["userid"])
@@ -130,11 +134,20 @@ def create_user():
     print(data, file)
 
     file.save("profile/"+secure_filename(file.filename))
-    x = usercol.insert_one(
-        {"username": data["username"], "password": data["password"], "profile": (file.filename)})
-    id = {
-        "id": str(x.inserted_id)
-    }
+    m = usercol.find_one({"username": data["username"]})
+    if m:
+        id = {
+            "id": str(m.inserted_id)
+        }
+
+        return jsonify(id)
+    else:
+
+        x = usercol.insert_one(
+            {"username": data["username"], "password": data["password"], "profile": (file.filename)})
+        id = {
+            "id": str(x.inserted_id)
+        }
 
     return jsonify(id)
 
@@ -149,6 +162,7 @@ def getallvids():
 
     return response
 
+
 @app.route("/getmyvids/<path:path>")
 def getmyvids(path):
     x = videocol.find({"userid": path})
@@ -160,12 +174,14 @@ def getmyvids(path):
     return response
 
 # increment likes for video
+
+
 @app.route("/like/<path:path>")
 def like(path):
     yoid = ObjectId(path)
     x = videocol.find_one({"_id": yoid})
     x["likes"] = x["likes"] + 1
-    y=videocol.update_one({"_id": yoid}, {"$set": x})
+    y = videocol.update_one({"_id": yoid}, {"$set": x})
     return jsonify({"message": "success"})
 
 
@@ -174,7 +190,7 @@ def like(path):
 def delete(path):
     yoid = ObjectId(path)
     x = videocol.delete_one({"_id": yoid})
-    
+
     return jsonify({"message": "success"})
 
 
@@ -319,3 +335,6 @@ def tts1():
         picurl, "tweet/"+tweetid+".png", mode=3, night_mode=2))
 
     return "success"
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port='5000')
